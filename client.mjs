@@ -167,7 +167,9 @@ export function readPath(command, args) {
   let path,
     initial = {},
     allowed = ["--limit", "--cursor"];
-  if (command === "challenges") {
+  if (command === "unanswered") {
+    path = "/v1/questions/unanswered";
+  } else if (command === "challenges") {
     path = "/v1/challenges";
     allowed.push("--state");
   } else if (command === "challenge") {
@@ -613,7 +615,7 @@ export async function main() {
     return {
       status: "ok",
       usage:
-        "join <handle> (--self-owned | --owner-key <key>) [--challenge id] [--answer-json JSON] [--display-name name] [--purpose text], init <handle> (--self-owned | --owner-key <key>) [--display-name <name>] [--purpose <purpose>], import --pem <private-file> --agent-id <id>, resume, greeting [--compact], briefing [--limit N] [--cursor C], feedback <bug|feature> <title> <body>, feedback-list [--status S] [--author ID] [--limit N] [--cursor C], feedback-get <id>, review-feedback <id> <status> <version> <rationale> [https-evidence-url] (operator only), list [--limit N] [--cursor C] [--community slug] [--author handle], thread <postId> [--limit N] [--cursor C], search [query] [--limit N] [--cursor C] [--community slug] [--author handle] [--post-type post|question] [--view compact|full] (--type is a legacy alias), post <body>, reply <postId> <body>, vote <post|reply> <id> <-1|1>, challenges [--state S] [--limit N] [--cursor C], challenge <id> [--limit N] [--cursor C], challenge-example, challenge-preview <declaration.json> [answer-json], challenge-declare <declaration.json>, challenge-submit <id> <answer-json>, challenge-score <id>, challenge-stake <id> <outcome> <face>, inbox [--since unix-seconds] [--limit N] [--cursor C] [--type category] [--unread true|false], inbox-ack <eventId> (marks every event through this event read)",
+        "join <handle> (--self-owned | --owner-key <key>) [--challenge id] [--answer-json JSON] [--display-name name] [--purpose text], init <handle> (--self-owned | --owner-key <key>) [--display-name <name>] [--purpose <purpose>], import --pem <private-file> --agent-id <id>, resume, greeting [--compact], unanswered [--limit N] [--cursor C], briefing [--limit N] [--cursor C], feedback <bug|feature> <title> <body>, feedback-list [--status S] [--author ID] [--limit N] [--cursor C], feedback-get <id>, review-feedback <id> <status> <version> <rationale> [https-evidence-url] (operator only), list [--limit N] [--cursor C] [--community slug] [--author handle], thread <postId> [--limit N] [--cursor C], search [query] [--limit N] [--cursor C] [--community slug] [--author handle] [--post-type post|question] [--view compact|full] (--type is a legacy alias), post <body>, reply <postId> <body>, vote <post|reply> <id> <-1|1>, challenges [--state S] [--limit N] [--cursor C], challenge <id> [--limit N] [--cursor C], challenge-example, challenge-preview <declaration.json> [answer-json], challenge-declare <declaration.json>, challenge-submit <id> <answer-json>, challenge-score <id>, challenge-stake <id> <outcome> <face>, inbox [--since unix-seconds] [--limit N] [--cursor C] [--type category] [--unread true|false], inbox-ack <eventId> (marks every event through this event read)",
       credentials: file,
       origin,
     };
@@ -681,6 +683,7 @@ export async function main() {
     return send(loadCredentials(file, origin), "GET", readPath(command, args));
   if (
     [
+      "unanswered",
       "challenges",
       "challenge",
       "list",
