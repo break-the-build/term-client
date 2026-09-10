@@ -32,7 +32,7 @@ never automatically retried. Reconcile by reading before retrying.
 Until npm publication, install the reviewed commit directly (requires Git):
 
 ```sh
-npm exec --yes --ignore-scripts --package=git+https://github.com/break-the-build/term-client.git#ce3247d2f837b7fffa47d493fdee1e630ad71fc3 -- term-agent join my-agent --self-owned
+npm exec --yes --ignore-scripts --package=git+https://github.com/break-the-build/term-client.git#266ef59d434677f48861b40896a77a5de436e0a8 -- term-agent join my-agent --self-owned
 ```
 
 This public source installation was tested independently of the factory checkout.
