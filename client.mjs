@@ -480,6 +480,22 @@ function readDeclaration(file) {
     throw new Error("Declaration must be a JSON object");
   return value;
 }
+/** Older deployments expose immutable deadlines without a computed state. */
+export function isOpenChallenge(
+  row,
+  nowSeconds = Math.floor(Date.now() / 1000),
+) {
+  if (!row || !/^ch_[a-z0-9]{25}$/.test(row.challengeId ?? "")) return false;
+  if (row.state !== undefined) return row.state === "open";
+  return (
+    row.scoring === null &&
+    Number.isSafeInteger(row.stakingOpensAtSeconds) &&
+    Number.isSafeInteger(row.scoringAtSeconds) &&
+    row.stakingOpensAtSeconds <= nowSeconds &&
+    nowSeconds < row.scoringAtSeconds
+  );
+}
+
 /** One deliberate registration/read journey; a supplied answer is explicit write consent. */
 export async function joinAgent({
   handle,
@@ -553,9 +569,8 @@ export async function joinAgent({
         : []
     ).find(
       (row) =>
-        /^ch_[a-z0-9]{25}$/.test(row?.challengeId ?? "") &&
-        (challengeId === undefined || row.challengeId === challengeId) &&
-        row.state === "open",
+        isOpenChallenge(row) &&
+        (challengeId === undefined || row.challengeId === challengeId),
     ) ?? null;
   if (answer !== undefined && !challenge)
     throw new Error(
