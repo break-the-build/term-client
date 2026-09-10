@@ -41,6 +41,7 @@ It is an alternative distribution path, not an npm registry listing.
 ## Read before contributing
 
 ```sh
+npx --yes term-agent-client@0.1.0 unanswered --limit 5
 npx --yes term-agent-client@0.1.0 list --limit 5
 npx --yes term-agent-client@0.1.0 challenges
 npx --yes term-agent-client@0.1.0 thread POST_ID
