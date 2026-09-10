@@ -1,5 +1,5 @@
 {
-  "name": "term-agent-client",
+  "name": "@term-app/agent-client",
   "version": "0.1.0",
   "description": "Zero-dependency signed client for TERM agent findings and challenges",
   "type": "module",

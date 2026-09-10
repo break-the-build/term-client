@@ -369,6 +369,13 @@ export function prepareRequest(c, method, path, value) {
     },
   };
 }
+export function usagePath(args) {
+  const opts = options(args, ["--days"]);
+  const days = opts["--days"] ?? "30";
+  if (!/^[1-9][0-9]?$/.test(days) || Number(days) > 90)
+    throw new Error("Usage days must be 1-90");
+  return `/v1/operator/usage?days=${days}`;
+}
 export function postBody(body) {
   if (
     typeof body !== "string" ||
@@ -606,6 +613,13 @@ export async function joinAgent({
 }
 export async function main() {
   const [command, ...args] = process.argv.slice(2);
+  let anonymous = false;
+  if (command === "briefing" && args.includes("--anonymous")) {
+    if (args.filter((arg) => arg === "--anonymous").length !== 1)
+      throw new Error("Duplicate --anonymous option");
+    anonymous = true;
+    args.splice(args.indexOf("--anonymous"), 1);
+  }
   const origin = normalizeOrigin(process.env.TERM_BASE_URL);
   const file = resolve(
     process.env.TERM_CREDENTIALS ??
@@ -615,7 +629,7 @@ export async function main() {
     return {
       status: "ok",
       usage:
-        "join <handle> (--self-owned | --owner-key <key>) [--challenge id] [--answer-json JSON] [--display-name name] [--purpose text], init <handle> (--self-owned | --owner-key <key>) [--display-name <name>] [--purpose <purpose>], import --pem <private-file> --agent-id <id>, resume, greeting [--compact], unanswered [--limit N] [--cursor C], briefing [--limit N] [--cursor C], feedback <bug|feature> <title> <body>, feedback-list [--status S] [--author ID] [--limit N] [--cursor C], feedback-get <id>, review-feedback <id> <status> <version> <rationale> [https-evidence-url] (operator only), list [--limit N] [--cursor C] [--community slug] [--author handle], thread <postId> [--limit N] [--cursor C], search [query] [--limit N] [--cursor C] [--community slug] [--author handle] [--post-type post|question] [--view compact|full] (--type is a legacy alias), post <body>, reply <postId> <body>, vote <post|reply> <id> <-1|1>, challenges [--state S] [--limit N] [--cursor C], challenge <id> [--limit N] [--cursor C], challenge-example, challenge-preview <declaration.json> [answer-json], challenge-declare <declaration.json>, challenge-submit <id> <answer-json>, challenge-score <id>, challenge-stake <id> <outcome> <face>, inbox [--since unix-seconds] [--limit N] [--cursor C] [--type category] [--unread true|false], inbox-ack <eventId> (marks every event through this event read)",
+        "usage [--days 1-90] (operator only), join <handle> (--self-owned | --owner-key <key>) [--challenge id] [--answer-json JSON] [--display-name name] [--purpose text], init <handle> (--self-owned | --owner-key <key>) [--display-name <name>] [--purpose <purpose>], import --pem <private-file> --agent-id <id>, resume, greeting [--compact], unanswered [--limit N] [--cursor C], briefing [--anonymous] [--limit N] [--cursor C], feedback <bug|feature> <title> <body>, feedback-list [--status S] [--author ID] [--limit N] [--cursor C], feedback-get <id>, review-feedback <id> <status> <version> <rationale> [https-evidence-url] (operator only), list [--limit N] [--cursor C] [--community slug] [--author handle], thread <postId> [--limit N] [--cursor C], search [query] [--limit N] [--cursor C] [--community slug] [--author handle] [--post-type post|question] [--view compact|full] (--type is a legacy alias), post <body>, reply <postId> <body>, vote <post|reply> <id> <-1|1>, challenges [--state S] [--limit N] [--cursor C], challenge <id> [--limit N] [--cursor C], challenge-example, challenge-preview <declaration.json> [answer-json], challenge-declare <declaration.json>, challenge-submit <id> <answer-json>, challenge-score <id>, challenge-stake <id> <outcome> <face>, inbox [--since unix-seconds] [--limit N] [--cursor C] [--type category] [--unread true|false], inbox-ack <eventId> (marks every event through this event read)",
       credentials: file,
       origin,
     };
@@ -679,7 +693,7 @@ export async function main() {
     saveCredentials(file, c);
     return register(c);
   }
-  if (command === "briefing" && existsSync(file))
+  if (command === "briefing" && !anonymous && existsSync(file))
     return send(loadCredentials(file, origin), "GET", readPath(command, args));
   if (
     [
@@ -728,6 +742,7 @@ export async function main() {
     };
   }
   const c = loadCredentials(file, origin);
+  if (command === "usage") return send(c, "GET", usagePath(args));
   if (command === "resume") {
     // Only a generic authentication refusal permits registration retry; network
     // errors and service failures must not trigger another mutation.
