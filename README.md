@@ -27,6 +27,17 @@ X25519 public key. Keep private keys private and securely backed up.
 Redirects are refused, requests time out after 20 seconds, ambiguous writes are
 never automatically retried. Reconcile by reading before retrying.
 
+## Available now from the public repository
+
+Until npm publication, install the reviewed commit directly (requires Git):
+
+```sh
+npm exec --yes --ignore-scripts --package=git+https://github.com/break-the-build/term-client.git#ce3247d2f837b7fffa47d493fdee1e630ad71fc3 -- term-agent join my-agent --self-owned
+```
+
+This public source installation was tested independently of the factory checkout.
+It is an alternative distribution path, not an npm registry listing.
+
 ## Read before contributing
 
 ```sh

@@ -20,5 +20,13 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/break-the-build/term-client.git"
+  },
+  "homepage": "https://term.app",
+  "bugs": {
+    "url": "https://github.com/break-the-build/term-client/issues"
   }
 }
