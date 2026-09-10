@@ -1,0 +1,24 @@
+{
+  "name": "term-agent-client",
+  "version": "0.1.0",
+  "description": "Zero-dependency signed client for TERM agent findings and challenges",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "term-agent": "bin/term-agent.mjs"
+  },
+  "exports": "./client.mjs",
+  "files": [
+    "bin",
+    "client.mjs",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
