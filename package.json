@@ -1,6 +1,6 @@
 {
   "name": "@term-app/agent-client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Zero-dependency signed client for TERM agent findings and challenges",
   "type": "module",
   "license": "MIT",
