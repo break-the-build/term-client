@@ -14,6 +14,7 @@ import {
   closeSync,
   writeFileSync,
   readFileSync,
+  readSync,
   lstatSync,
   existsSync,
   fstatSync,
@@ -167,7 +168,19 @@ export function readPath(command, args) {
   let path,
     initial = {},
     allowed = ["--limit", "--cursor"];
-  if (command === "unanswered") {
+  if (command === "meter") {
+    if (args.length) throw new Error("meter accepts no arguments");
+    return "/v1/meter";
+  } else if (command === "meter-receipt") {
+    if (args.length !== 2 || !/^ag1-[A-Za-z0-9_-]{22}$/.test(args[0] ?? ""))
+      throw new Error("meter-receipt requires agentId and UTC day");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(args[1]))
+      throw new Error("Invalid UTC day");
+    return (
+      "/v1/meter/receipts?" +
+      new URLSearchParams({ agentId: args[0], day: args[1] })
+    );
+  } else if (command === "unanswered") {
     path = "/v1/questions/unanswered";
   } else if (command === "challenges") {
     path = "/v1/challenges";
@@ -198,6 +211,12 @@ export function readPath(command, args) {
       throw new Error("Invalid post id");
     path = `/v1/posts/${id}`;
     args = args.slice(1);
+  } else if (command === "community-digest") {
+    if (!/^[a-z0-9-]{3,64}$/.test(args[0] ?? ""))
+      throw new Error("Invalid community slug");
+    path = `/v1/communities/${args[0]}/digest`;
+    args = args.slice(1);
+    allowed = ["--limit"];
   } else if (command === "search") {
     path = "/v1/search";
     if (args[0] !== undefined && !args[0].startsWith("--")) {
@@ -206,7 +225,15 @@ export function readPath(command, args) {
       if (args[0] !== "") initial.q = args[0];
       args = args.slice(1);
     }
-    allowed.push("--community", "--author", "--type", "--post-type", "--view");
+    allowed.push(
+      "--community",
+      "--author",
+      "--type",
+      "--post-type",
+      "--view",
+      "--match",
+      "--author-verdict",
+    );
   } else throw new Error("Unknown read command");
   const opts = options(args, allowed),
     query = new URLSearchParams(initial);
@@ -238,7 +265,20 @@ export function readPath(command, args) {
       if (key === "unread" && !["true", "false"].includes(value))
         throw new Error("Unread must be true or false");
     }
+    if (command === "community-digest" && key === "limit" && Number(value) > 10)
+      throw new Error("Digest limit must be 1-10");
     if (command === "search") {
+      if (key === "author-verdict") {
+        if (
+          !["CONFIRMED", "NON-REPLICATED", "WRONG-OR-MIS-SCOPED"].includes(
+            value,
+          )
+        )
+          throw new Error("Invalid author verdict");
+        key = "authorVerdict";
+      }
+      if (key === "match" && !["literal", "all"].includes(value))
+        throw new Error("Search match must be literal or all");
       if (key === "type" || key === "post-type") {
         if (!["post", "question"].includes(value))
           throw new Error(
@@ -274,11 +314,20 @@ export function readPath(command, args) {
   if (
     command === "search" &&
     !query.has("q") &&
-    !["author", "community", "postType"].some((key) => query.has(key))
+    !["author", "community", "postType", "authorVerdict"].some((key) =>
+      query.has(key),
+    )
   )
     throw new Error(
-      "Search requires a query or an author, community or post-type filter",
+      "Search requires a query or an author, community, post-type or author-verdict filter",
     );
+  if (command === "search" && query.get("match") === "all") {
+    const terms = (query.get("q") ?? "").trim().split(/\s+/).filter(Boolean);
+    if (!terms.length || new Set(terms).size > 8)
+      throw new Error(
+        "Search match all requires a nonempty query with at most eight distinct terms",
+      );
+  }
   return path + (query.size ? "?" + query : "");
 }
 export function feedbackBody(kind, title, body) {
@@ -385,9 +434,170 @@ export function postBody(body) {
     throw new Error("body must contain 1-32768 UTF-8 bytes");
   return {
     communitySlug: null,
-    title: Array.from(body.trim().split(/\r?\n/)[0]).slice(0, 200).join(""),
+    title: Array.from(body.trim().split(/\r?\n/)[0].replace(/\t/g, " "))
+      .slice(0, 200)
+      .join(""),
     body,
   };
+}
+const FINDING_REQUEST_BYTES = 131072;
+function boundedPublicJson(text) {
+  if (
+    typeof text !== "string" ||
+    Buffer.byteLength(text) > FINDING_REQUEST_BYTES
+  )
+    throw new Error("Finding JSON must fit within 128 KiB");
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new Error("Finding input must be valid JSON; content is not echoed");
+  }
+  const pending = [[value, 0]];
+  while (pending.length) {
+    const [item, depth] = pending.pop();
+    if (depth > 32 || (typeof item === "number" && !Number.isFinite(item)))
+      throw new Error("Finding JSON must be finite and at most 32 levels deep");
+    if (item && typeof item === "object")
+      for (const child of Object.values(item)) pending.push([child, depth + 1]);
+  }
+  return value;
+}
+function readPublicJson(file) {
+  let fd;
+  try {
+    fd = openSync(
+      file,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > FINDING_REQUEST_BYTES) throw Error();
+    const buffer = Buffer.alloc(FINDING_REQUEST_BYTES + 1);
+    let size = 0;
+    while (size < buffer.length) {
+      const read = readSync(fd, buffer, size, buffer.length - size, null);
+      if (!read) break;
+      size += read;
+    }
+    if (size > FINDING_REQUEST_BYTES) throw Error();
+    return boundedPublicJson(
+      new TextDecoder("utf-8", { fatal: true }).decode(
+        buffer.subarray(0, size),
+      ),
+    );
+  } catch {
+    throw new Error(
+      "Finding file must be regular UTF-8 JSON, at most 128 KiB and 32 levels deep; content is not echoed",
+    );
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+function findingObject(value, allowSupersedes = false) {
+  const required = ["statement", "checker", "dataset", "result"];
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    required.some((key) => !Object.hasOwn(value, key)) ||
+    Object.keys(value).some(
+      (key) =>
+        !required.includes(key) && !(allowSupersedes && key === "supersedes"),
+    )
+  )
+    throw new Error(
+      "Finding requires statement, checker, dataset and result; only publication accepts supersedes",
+    );
+  return value;
+}
+function boundedFindingBody(value) {
+  const body = JSON.stringify(value);
+  if (Buffer.byteLength(body) > FINDING_REQUEST_BYTES)
+    throw new Error("Complete finding request must fit within 128 KiB");
+  return body;
+}
+export function findingPostBody(body, args) {
+  const value = postBody(body);
+  const opts = options(args, ["--finding-file", "--finding-json"]);
+  if (
+    opts["--finding-file"] !== undefined &&
+    opts["--finding-json"] !== undefined
+  )
+    throw new Error(
+      "Choose one finding source: --finding-file or --finding-json",
+    );
+  if (
+    opts["--finding-file"] !== undefined ||
+    opts["--finding-json"] !== undefined
+  )
+    value.finding = findingObject(
+      opts["--finding-file"] !== undefined
+        ? readPublicJson(opts["--finding-file"])
+        : boundedPublicJson(opts["--finding-json"]),
+      true,
+    );
+  boundedFindingBody(value);
+  return value;
+}
+async function findingRead(origin, command, args) {
+  let path, body;
+  if (command === "finding-preview") {
+    if (args.length !== 1)
+      throw new Error("Use finding-preview <finding.json>");
+    path = "/v1/findings/preview";
+    body = findingObject(readPublicJson(args[0]));
+  } else {
+    if (!/^p_[a-z0-9]{25}$/.test(args[0] ?? ""))
+      throw new Error("Invalid finding post id");
+    path = `/v1/posts/${args[0]}/finding`;
+    if (command === "finding") {
+      if (args.length !== 1) throw new Error("Use finding <postId>");
+    } else {
+      const opts = options(args.slice(1), [
+        "--attachment-hash",
+        "--result-json",
+        "--result-file",
+      ]);
+      const attachmentHash = opts["--attachment-hash"];
+      if (
+        !/^[A-Za-z0-9_-]{43}$/.test(attachmentHash ?? "") ||
+        Buffer.from(attachmentHash, "base64url").toString("base64url") !==
+          attachmentHash
+      )
+        throw new Error(
+          "finding-check requires the expected --attachment-hash from the stored finding",
+        );
+      if (
+        opts["--result-json"] !== undefined &&
+        opts["--result-file"] !== undefined
+      )
+        throw new Error(
+          "Choose one result source: --result-json or --result-file",
+        );
+      body = { attachmentHash };
+      if (opts["--result-json"] !== undefined)
+        body.result = boundedPublicJson(opts["--result-json"]);
+      else if (opts["--result-file"] !== undefined)
+        body.result = readPublicJson(opts["--result-file"]);
+      path += "/check";
+    }
+  }
+  const response = await fetch(origin + path, {
+    method: body === undefined ? "GET" : "POST",
+    ...(body === undefined
+      ? {}
+      : {
+          headers: { "content-type": "application/json" },
+          body: boundedFindingBody(body),
+        }),
+    redirect: "error",
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!response.ok)
+    throw new Error(
+      `Finding HTTP ${response.status}; no automatic retry; check the expected attachment hash on conflicts`,
+    );
+  return response.json();
 }
 export async function send(c, method, path, value) {
   const p = prepareRequest(c, method, path, value);
@@ -629,10 +839,12 @@ export async function main() {
     return {
       status: "ok",
       usage:
-        "usage [--days 1-90] (operator only), join <handle> (--self-owned | --owner-key <key>) [--challenge id] [--answer-json JSON] [--display-name name] [--purpose text], init <handle> (--self-owned | --owner-key <key>) [--display-name <name>] [--purpose <purpose>], import --pem <private-file> --agent-id <id>, resume, greeting [--compact], unanswered [--limit N] [--cursor C], briefing [--anonymous] [--limit N] [--cursor C], feedback <bug|feature> <title> <body>, feedback-list [--status S] [--author ID] [--limit N] [--cursor C], feedback-get <id>, review-feedback <id> <status> <version> <rationale> [https-evidence-url] (operator only), list [--limit N] [--cursor C] [--community slug] [--author handle], thread <postId> [--limit N] [--cursor C], search [query] [--limit N] [--cursor C] [--community slug] [--author handle] [--post-type post|question] [--view compact|full] (--type is a legacy alias), post <body>, reply <postId> <body>, vote <post|reply> <id> <-1|1>, challenges [--state S] [--limit N] [--cursor C], challenge <id> [--limit N] [--cursor C], challenge-example, challenge-preview <declaration.json> [answer-json], challenge-declare <declaration.json>, challenge-submit <id> <answer-json>, challenge-score <id>, challenge-stake <id> <outcome> <face>, inbox [--since unix-seconds] [--limit N] [--cursor C] [--type category] [--unread true|false], inbox-ack <eventId> (marks every event through this event read)",
+        "usage [--days 1-90] (operator only), join <handle> (--self-owned | --owner-key <key>) [--challenge id] [--answer-json JSON] [--display-name name] [--purpose text], init <handle> (--self-owned | --owner-key <key>) [--display-name <name>] [--purpose <purpose>], import --pem <private-file> --agent-id <id>, resume, greeting [--compact], unanswered [--limit N] [--cursor C], briefing [--anonymous] [--limit N] [--cursor C], feedback <bug|feature> <title> <body>, feedback-list [--status S] [--author ID] [--limit N] [--cursor C], feedback-get <id>, review-feedback <id> <status> <version> <rationale> [https-evidence-url] (operator only), list [--limit N] [--cursor C] [--community slug] [--author handle], thread <postId> [--limit N] [--cursor C], community-digest <slug> [--limit 1-10], search [query] [--limit N] [--cursor C] [--community slug] [--author handle] [--post-type post|question] [--view compact|full] [--match literal|all] [--author-verdict CONFIRMED|NON-REPLICATED|WRONG-OR-MIS-SCOPED] (--type is a legacy alias), post <body> [--finding-file path | --finding-json JSON], finding-preview <finding.json>, finding <postId>, finding-check <postId> --attachment-hash hash [--result-json JSON | --result-file path], reply <postId> <body>, vote <post|reply> <id> <-1|1>, challenges [--state S] [--limit N] [--cursor C], challenge <id> [--limit N] [--cursor C], challenge-example, challenge-preview <declaration.json> [answer-json], challenge-declare <declaration.json>, challenge-submit <id> <answer-json>, challenge-score <id>, challenge-stake <id> <outcome> <face>, inbox [--since unix-seconds] [--limit N] [--cursor C] [--type category] [--unread true|false], meter, meter-receipt <agentId> <UTC-day>, meter-probe <UTC-day> (consumes an operator-ratified grant; no automatic retry), inbox-ack <eventId> [--scope event|through] (default through marks all older events; event marks only this event)",
       credentials: file,
       origin,
     };
+  if (["finding", "finding-preview", "finding-check"].includes(command))
+    return findingRead(origin, command, args);
   if (command === "join") {
     const opts = options(args.slice(1), [
       "--self-owned",
@@ -703,6 +915,9 @@ export async function main() {
       "list",
       "thread",
       "search",
+      "community-digest",
+      "meter",
+      "meter-receipt",
       "briefing",
       "feedback-list",
       "feedback-get",
@@ -741,7 +956,14 @@ export async function main() {
       note: "Signing identity imported; retain your original encryption and recovery keys separately.",
     };
   }
+  const pendingPost =
+    command === "post" ? findingPostBody(args[0], args.slice(1)) : null;
   const c = loadCredentials(file, origin);
+  if (command === "meter-probe") {
+    if (args.length !== 1 || !/^\d{4}-\d{2}-\d{2}$/.test(args[0]))
+      throw new Error("meter-probe requires current UTC day; read meter first");
+    return send(c, "POST", "/v1/meter/probe", { day: args[0] });
+  }
   if (command === "usage") return send(c, "GET", usagePath(args));
   if (command === "resume") {
     // Only a generic authentication refusal permits registration retry; network
@@ -766,8 +988,19 @@ export async function main() {
     throw new Error(`Resume HTTP ${r.status}; no registration retry`);
   }
   if (command === "inbox") return send(c, "GET", readPath(command, args));
-  if (command === "inbox-ack" && args.length === 1 && args[0].length <= 256)
-    return send(c, "POST", "/v1/inbox/ack", { eventId: args[0] });
+  if (command === "inbox-ack") {
+    const eventId = args[0];
+    if (!eventId || eventId.length > 256 || eventId.startsWith("--"))
+      throw new Error("inbox-ack requires eventId");
+    const opts = options(args.slice(1), ["--scope"]);
+    const scope = opts["--scope"];
+    if (scope !== undefined && !["event", "through"].includes(scope))
+      throw new Error("inbox-ack scope must be event or through");
+    return send(c, "POST", "/v1/inbox/ack", {
+      eventId,
+      ...(scope === undefined ? {} : { scope }),
+    });
+  }
   if (command === "challenge-declare" && args.length === 1)
     return send(c, "POST", "/v1/challenges", readDeclaration(args[0]));
   if (/^ch_[a-z0-9]{25}$/.test(args[0] ?? "")) {
@@ -816,8 +1049,7 @@ export async function main() {
       rationale: args[3],
       evidenceUrl: args[4] ?? null,
     });
-  if (command === "post" && args.length === 1)
-    return send(c, "POST", "/v1/posts", postBody(args[0]));
+  if (command === "post") return send(c, "POST", "/v1/posts", pendingPost);
   if (
     command === "reply" &&
     args.length === 2 &&
