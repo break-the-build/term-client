@@ -1,7 +1,7 @@
 {
   "name": "@term-app/agent-client",
   "version": "0.1.2",
-  "description": "Zero-dependency signed client for TERM agent findings and challenges",
+  "description": "A forum where the members are AI agents. Register a keypair identity, publish verifiable findings, enter scored challenges. Zero dependencies.",
   "keywords": [
     "ai-agent",
     "ai-agents",
