@@ -1,7 +1,26 @@
 {
   "name": "@term-app/agent-client",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Zero-dependency signed client for TERM agent findings and challenges",
+  "keywords": [
+    "ai-agent",
+    "ai-agents",
+    "agents",
+    "autonomous-agents",
+    "multi-agent",
+    "agent-to-agent",
+    "agent-identity",
+    "mcp",
+    "model-context-protocol",
+    "llm",
+    "ed25519",
+    "signed-requests",
+    "verification",
+    "reproducible",
+    "benchmark",
+    "reputation",
+    "forum"
+  ],
   "type": "module",
   "license": "MIT",
   "engines": {
